@@ -215,7 +215,7 @@ RIFLE_RING_RATIOS = {
 
 RIFLE_BLACK_RATIO = RIFLE_RING_RATIOS[4]
 RIFLE_OUTER_MM = 22.75
-RIFLE_HOLE_DIAM_MM = 3.41  # 1.5 ring widths (1.5 × 2.275mm)
+RIFLE_HOLE_DIAM_MM = 3.41  # 1.5 ring widths (1.5 ├ù 2.275mm)
 RIFLE_HOLE_RADIUS_RATIO = (RIFLE_HOLE_DIAM_MM / 2.0) / RIFLE_OUTER_MM
 
 # Ring 10 OUTER boundary (10-ring / X-ring boundary, NOT the inner dot)
@@ -367,13 +367,13 @@ def _rifle_decimal_score_all_rings(
 
     r10 = float(ring_ratios[10])
 
-    # Inside true 10-ring → 10.0 to 10.9
+    # Inside true 10-ring ΓåÆ 10.0 to 10.9
     if d <= r10:
         t = d / r10
         score = 10.9 - (0.9 * t)
         return round(score, 1)
 
-    # Outside 10-ring → ring interpolation
+    # Outside 10-ring ΓåÆ ring interpolation
     edges = [
         (9, float(ring_ratios[9])),
         (8, float(ring_ratios[8])),
@@ -608,7 +608,7 @@ def _suppress_neighbor_hole_noise(hole_list, min_distance_px=NEIGHBOR_NOISE_DIST
         for kx, ky, _kr in kept:
             dx = float(hx) - float(kx)
             dy = float(hy) - float(ky)
-            # Use a simple fixed distance — the dynamic formula was merging
+            # Use a simple fixed distance ΓÇö the dynamic formula was merging
             # legitimate second shots that happened to be close together.
             if (dx * dx + dy * dy) <= (float(min_distance_px) ** 2):
                 is_neighbor = True
@@ -873,47 +873,47 @@ def pistol_decimal_score(d_norm):
     Returns:
         Discrete score (10, 9, 8, ..., 1, 0)
     """
-    # Inner edge inside inner 10 (< PISTOL_RING_RATIOS[10]) → Score 10
+    # Inner edge inside inner 10 (< PISTOL_RING_RATIOS[10]) ΓåÆ Score 10
     if d_norm < PISTOL_RING_RATIOS[10]:
         return 10.0
     
-    # Inner edge inside ring 10 zone → Score 10
+    # Inner edge inside ring 10 zone ΓåÆ Score 10
     if d_norm < PISTOL_RING_RATIOS[9]:
         return 10.0
     
-    # Inner edge inside ring 9 zone → Score 9
+    # Inner edge inside ring 9 zone ΓåÆ Score 9
     if d_norm < PISTOL_RING_RATIOS[8]:
         return 9.0
     
-    # Inner edge inside ring 8 zone → Score 8
+    # Inner edge inside ring 8 zone ΓåÆ Score 8
     if d_norm < PISTOL_RING_RATIOS[7]:
         return 8.0
     
-    # Inner edge inside ring 7 zone → Score 7
+    # Inner edge inside ring 7 zone ΓåÆ Score 7
     if d_norm < PISTOL_RING_RATIOS[6]:
         return 7.0
     
-    # Inner edge inside ring 6 zone → Score 6
+    # Inner edge inside ring 6 zone ΓåÆ Score 6
     if d_norm < PISTOL_RING_RATIOS[5]:
         return 6.0
     
-    # Inner edge inside ring 5 zone → Score 5
+    # Inner edge inside ring 5 zone ΓåÆ Score 5
     if d_norm < PISTOL_RING_RATIOS[4]:
         return 5.0
     
-    # Inner edge inside ring 4 zone → Score 4
+    # Inner edge inside ring 4 zone ΓåÆ Score 4
     if d_norm < PISTOL_RING_RATIOS[3]:
         return 4.0
     
-    # Inner edge inside ring 3 zone → Score 3
+    # Inner edge inside ring 3 zone ΓåÆ Score 3
     if d_norm < PISTOL_RING_RATIOS[2]:
         return 3.0
     
-    # Inner edge inside ring 2 zone → Score 2
+    # Inner edge inside ring 2 zone ΓåÆ Score 2
     if d_norm < PISTOL_RING_RATIOS[1]:
         return 2.0
     
-    # Inner edge inside ring 1 zone → Score 1
+    # Inner edge inside ring 1 zone ΓåÆ Score 1
     if d_norm < 1.0:
         return 1.0
     
@@ -938,47 +938,47 @@ def rifle_decimal_score(d_norm_edge, d_norm_center=None):
     # Ring boundaries: RIFLE_RING_RATIOS[N] is where ring N STARTS (inner boundary)
     # So if inner edge < RIFLE_RING_RATIOS[N], it's INSIDE ring N+1
     
-    # Inner edge inside inner 10 dot (< 0.01099) → Score 10 (decimal handled separately)
+    # Inner edge inside inner 10 dot (< 0.01099) ΓåÆ Score 10 (decimal handled separately)
     if d_norm_edge < RIFLE_RING_RATIOS[10]:
         return 10.0
     
-    # Inner edge inside ring 10 zone (< 0.12088) → Score 10
+    # Inner edge inside ring 10 zone (< 0.12088) ΓåÆ Score 10
     if d_norm_edge < RIFLE_RING_RATIOS[9]:
         return 10.0
     
-    # Inner edge inside ring 9 zone (< 0.23077) → Score 9
+    # Inner edge inside ring 9 zone (< 0.23077) ΓåÆ Score 9
     if d_norm_edge < RIFLE_RING_RATIOS[8]:
         return 9.0
     
-    # Inner edge inside ring 8 zone (< 0.34066) → Score 8
+    # Inner edge inside ring 8 zone (< 0.34066) ΓåÆ Score 8
     if d_norm_edge < RIFLE_RING_RATIOS[7]:
         return 8.0
     
-    # Inner edge inside ring 7 zone (< 0.45055) → Score 7
+    # Inner edge inside ring 7 zone (< 0.45055) ΓåÆ Score 7
     if d_norm_edge < RIFLE_RING_RATIOS[6]:
         return 7.0
     
-    # Inner edge inside ring 6 zone (< 0.56044) → Score 6
+    # Inner edge inside ring 6 zone (< 0.56044) ΓåÆ Score 6
     if d_norm_edge < RIFLE_RING_RATIOS[5]:
         return 6.0
     
-    # Inner edge inside ring 5 zone (< 0.67033) → Score 5
+    # Inner edge inside ring 5 zone (< 0.67033) ΓåÆ Score 5
     if d_norm_edge < RIFLE_RING_RATIOS[4]:
         return 5.0
     
-    # Inner edge inside ring 4 zone (< 0.78022) → Score 4
+    # Inner edge inside ring 4 zone (< 0.78022) ΓåÆ Score 4
     if d_norm_edge < RIFLE_RING_RATIOS[3]:
         return 4.0
     
-    # Inner edge inside ring 3 zone (< 0.89011) → Score 3
+    # Inner edge inside ring 3 zone (< 0.89011) ΓåÆ Score 3
     if d_norm_edge < RIFLE_RING_RATIOS[2]:
         return 3.0
     
-    # Inner edge inside ring 2 zone (< 1.0) → Score 2
+    # Inner edge inside ring 2 zone (< 1.0) ΓåÆ Score 2
     if d_norm_edge < RIFLE_RING_RATIOS[1]:
         return 2.0
     
-    # Inner edge inside ring 1 zone (< 1.0 normalized) → Score 1
+    # Inner edge inside ring 1 zone (< 1.0 normalized) ΓåÆ Score 1
     if d_norm_edge < 1.0:
         return 1.0
     
@@ -1201,7 +1201,7 @@ def _annotate_and_score(frame, shooting_mode="rifle"):
             validated_holes.append((hx, hy, hr))
 
     # De-noise pass: remove near-neighbor duplicate detections (pixel-level noise only).
-    # Keep fixed at NEIGHBOR_NOISE_DISTANCE_PX (12px) — a physically calibrated merge distance
+    # Keep fixed at NEIGHBOR_NOISE_DISTANCE_PX (12px) ΓÇö a physically calibrated merge distance
     # risks collapsing two real shots that are close together in adjacent rings.
     validated_holes = _suppress_neighbor_hole_noise(validated_holes, NEIGHBOR_NOISE_DISTANCE_PX)
 
@@ -1216,7 +1216,7 @@ def _annotate_and_score(frame, shooting_mode="rifle"):
         effective_hole_radius_px = expected_hole_radius_px
     effective_hole_radius_ratio = effective_hole_radius_px / outer_radius_px
 
-    # Apply center refinement for rifle shots (no additional dedup — a
+    # Apply center refinement for rifle shots (no additional dedup ΓÇö a
     # simple fixed-distance pass was already done above, and a second pass
     # with radius-scaled distances here was merging valid second shots).
     if mode == "rifle" and validated_holes:
@@ -1306,7 +1306,7 @@ def _annotate_and_score(frame, shooting_mode="rifle"):
                     center_distance_px = sqrt(dx_px * dx_px + dy_px * dy_px)
                     
                     # Calculate ring 10 OUTER boundary radius in pixels.
-                    # Use ring_ratios[9] for rifle — same boundary as the decimal band scorer
+                    # Use ring_ratios[9] for rifle ΓÇö same boundary as the decimal band scorer
                     # (ring_ratios[9] = 0.12088 for rifle, PISTOL_RING_RATIOS[9] for pistol).
                     ring10_outer_ratio = (
                         float(RIFLE_RING_RATIOS[9]) if mode == "rifle"
@@ -1352,7 +1352,9 @@ def _annotate_and_score(frame, shooting_mode="rifle"):
                     print(f"[Contour 10] Circularity {contour_circularity:.2f} < {CONTOUR_MIN_CIRCULARITY}, using YOLO score", flush=True)
             else:
                 print(f"[Contour 10] contour_result is None, using YOLO score", flush=True)
-        # Skip 0.0-scoring detections — pellet edge entirely outside ring 1.
+
+        # Skip 0.0-scoring detections: a score of 0 means the pellet edge is
+        # entirely outside ring 1, which is a clear false positive on a framed target.
         if score == 0.0:
             if DEBUG_DETECTIONS:
                 print(f"[Score Filter] Shot at ({hx:.1f}, {hy:.1f}) skipped: score=0.0", flush=True)
@@ -1370,7 +1372,7 @@ def _annotate_and_score(frame, shooting_mode="rifle"):
             "score": float(score),
             "detection_method": detection_method,
 
-            # 🔥 For arrows
+            # ≡ƒöÑ For arrows
             "center_x": center_x,
             "center_y": center_y,
             "dx": float(dx),
