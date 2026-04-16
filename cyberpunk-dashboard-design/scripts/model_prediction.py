@@ -1256,11 +1256,11 @@ def _annotate_and_score(frame, shooting_mode="rifle"):
     validated_holes = _suppress_neighbor_hole_noise(validated_holes, NEIGHBOR_NOISE_DISTANCE_PX)
 
     if validated_holes:
-        clamped_radii = [
-            _clamp(float(hr), scoring_hole_radius_min_px, scoring_hole_radius_max_px)
-            for _, _, hr in validated_holes
-        ]
-        effective_hole_radius_px = float(np.median(clamped_radii))
+        # Force the scoring pellet gauge to be exactly the nominal physical size.
+        # YOLO bounding boxes often overestimate the radius due to irregular paper
+        # tears. Overestimated radii artifically reduce the edge distance, inflating
+        # the final score (e.g. a 7.9 gets pushed into 8.9).
+        effective_hole_radius_px = expected_hole_radius_px
     else:
         effective_hole_radius_px = expected_hole_radius_px
     effective_hole_radius_ratio = effective_hole_radius_px / outer_radius_px
