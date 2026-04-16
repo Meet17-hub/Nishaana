@@ -1016,8 +1016,9 @@ def _annotate_and_score(frame, shooting_mode="rifle"):
         if enhanced_shape[0] > original_shape[0]:
             enhancement_scale = float(enhanced_shape[0]) / float(original_shape[0])
 
-    # Use standardized 0.12 confidence threshold identical to scripts_pistol.
-    # Lower thresholds caused massive hallucination of shots.
+    # Keep confidence at 0.12 to catch all real rifle holes (including torn/irregular ones
+    # detected at low confidence). The score==0.0 filter below eliminates false positives
+    # (whitespace/texture detections) without affecting low-confidence real shots.
     model_conf = 0.12
     res = model(infer_frame, conf=model_conf)[0]
     names = res.names
@@ -1199,9 +1200,11 @@ def _annotate_and_score(frame, shooting_mode="rifle"):
         if _validate_hole_shape(frame_gray, hx, hy, hr, min_circularity=0.55, min_aspect_ratio=0.6):
             validated_holes.append((hx, hy, hr))
 
-
-    # Final de-noise pass: remove near-neighbor duplicate detections (4-5px noise).
+    # De-noise pass: remove near-neighbor duplicate detections (pixel-level noise only).
+    # Keep fixed at NEIGHBOR_NOISE_DISTANCE_PX (12px) — a physically calibrated merge distance
+    # risks collapsing two real shots that are close together in adjacent rings.
     validated_holes = _suppress_neighbor_hole_noise(validated_holes, NEIGHBOR_NOISE_DISTANCE_PX)
+
 
     if validated_holes:
         # Force the scoring pellet gauge to be exactly the nominal physical size.
@@ -1349,6 +1352,13 @@ def _annotate_and_score(frame, shooting_mode="rifle"):
                     print(f"[Contour 10] Circularity {contour_circularity:.2f} < {CONTOUR_MIN_CIRCULARITY}, using YOLO score", flush=True)
             else:
                 print(f"[Contour 10] contour_result is None, using YOLO score", flush=True)
+
+        # Skip 0.0-scoring detections: a score of 0 means the pellet edge is
+        # entirely outside ring 1, which is a clear false positive on a framed target.
+        if score == 0.0:
+            if DEBUG_DETECTIONS:
+                print(f"[Score Filter] Shot at ({hx:.1f}, {hy:.1f}) skipped: score=0.0", flush=True)
+            continue
 
         total_score += score
         dx = hx - center_x
