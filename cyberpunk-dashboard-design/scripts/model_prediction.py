@@ -350,13 +350,12 @@ def _refine_hole_center_rifle(frame, hx, hy, hr, black_center, black_radius):
 def _rifle_decimal_score_all_rings(
     d_norm_edge: float,
     outer_radius_px: float,
-    center_distance_px: float,
+    center_dist_px: float,
     pellet_radius_px: float,
     mode: str = "rifle",
 ) -> float:
-    """Calculate decimal score for all rings using normalized pellet-edge distance.
-
-    Returns discrete tenths in each ring: N.0 ... N.9
+    """Calculate decimal score for all rings using continuous linear interpolation.
+    Matches ISSF logic precisely by interpolating between standard ring boundaries.
     """
     ring_ratios = PISTOL_RING_RATIOS if mode == "pistol" else RIFLE_RING_RATIOS
 
@@ -366,47 +365,41 @@ def _rifle_decimal_score_all_rings(
     if d >= 1.0:
         return 0.0
 
-    # Bands are [inner, outer):
-    # For rifle, ring_ratios[9] = 0.12088 is the outer boundary of ring 10
-    # (and the inner boundary of ring 9). This is what the integer scorer uses too.
-    # Using RIFLE_RING_10_OUTER_RATIO (0.10989) here instead caused ring 9's band
-    # to be 10% wider than every other ring, making decimal sub-scores in ring 9 wrong.
-    ten_outer = float(ring_ratios[9])  # consistent for both rifle and pistol
-    # 10: [0, ten_outer), 9: [r9, r8), 8: [r8, r7), ..., 2: [r2, r1), 1: [r1, 1.0)
-    bands = [(10, 0.0, ten_outer)]
-    for s in range(9, 1, -1):
-        bands.append((s, float(ring_ratios[s]), float(ring_ratios[s - 1])))
-    bands.append((1, float(ring_ratios[1]), 1.0))
+    r10 = float(ring_ratios[10])
 
-    base_score = 0
-    inner_b = 0.0
-    outer_b = 0.0
-    for s, inner, outer in bands:
-        if d < outer:
-            base_score = s
-            inner_b = inner
-            outer_b = outer
-            break
+    # Inside true 10-ring → 10.0 to 10.9
+    if d <= r10:
+        t = d / r10
+        score = 10.9 - (0.9 * t)
+        return round(score, 1)
 
-    if base_score == 0:
-        return 0.0
+    # Outside 10-ring → ring interpolation
+    edges = [
+        (9, float(ring_ratios[9])),
+        (8, float(ring_ratios[8])),
+        (7, float(ring_ratios[7])),
+        (6, float(ring_ratios[6])),
+        (5, float(ring_ratios[5])),
+        (4, float(ring_ratios[4])),
+        (3, float(ring_ratios[3])),
+        (2, float(ring_ratios[2])),
+        (1, float(ring_ratios[1])),
+        (0, 1.0),
+    ]
 
-    width = max(outer_b - inner_b, 1e-9)
-    progress = (outer_b - d) / width  # 0 at outer edge, 1 at inner edge
-    progress = max(0.0, min(1.0, progress))
+    prev_score = 10
+    prev_radius = r10
 
-    dec_idx = min(int(progress * 10.0), 9)  # 0..9
-    final_score = round(float(base_score) + (dec_idx * 0.1), 1)
+    for score_out, r_out in edges:
+        if prev_radius < d <= r_out:
+            t = (d - prev_radius) / (r_out - prev_radius)
+            score = prev_score - t * (prev_score - score_out)
+            return round(max(0.0, score), 1)
 
-    if DEBUG_DETECTIONS and base_score in (8, 9, 10):
-        print(
-            f"[DecimalScore] base={base_score}, d={d:.5f}, inner={inner_b:.5f}, "
-            f"outer={outer_b:.5f}, progress={progress:.3f}, score={final_score:.1f}",
-            flush=True,
-        )
+        prev_score = score_out
+        prev_radius = r_out
 
-    return final_score
-
+    return 0.0
 
 def _contour_decimal_ten_score(center_distance_px: float, ring10_radius_px: float, pellet_radius_px: float) -> float | None:
     """Calculate decimal 10-score using discrete bands.
@@ -615,12 +608,9 @@ def _suppress_neighbor_hole_noise(hole_list, min_distance_px=NEIGHBOR_NOISE_DIST
         for kx, ky, _kr in kept:
             dx = float(hx) - float(kx)
             dy = float(hy) - float(ky)
-            dynamic_merge_distance = max(
-                float(min_distance_px),
-                min(float(max(hr, _kr)) * 1.35, float(max(hr + _kr, min_distance_px))),
-            )
-            merge_d2 = dynamic_merge_distance * dynamic_merge_distance
-            if (dx * dx + dy * dy) <= merge_d2:
+            # Use a simple fixed distance — the dynamic formula was merging
+            # legitimate second shots that happened to be close together.
+            if (dx * dx + dy * dy) <= (float(min_distance_px) ** 2):
                 is_neighbor = True
                 break
 
@@ -690,14 +680,8 @@ def _validate_hole_shape(frame_gray, hx, hy, hr, min_circularity=0.55, min_aspec
         mask = np.zeros((h, w), dtype=np.uint8)
         cv.circle(mask, (cx, cy), int(hr + 2), 255, -1)
         
-        # Apply adaptive threshold to the ROI to find actual shapes, not the drawing
-        thresh = cv.adaptiveThreshold(roi, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 11, 2)
-        
-        # Isolate only the shape inside our circle mask
-        actual_shape = cv.bitwise_and(thresh, mask)
-
-        # Find contours in the isolated shape
-        cnts, _ = cv.findContours(actual_shape, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+        # Find contours in ROI
+        cnts, _ = cv.findContours(mask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
         if not cnts:
             return True
         
@@ -730,7 +714,7 @@ def _validate_hole_shape(frame_gray, hx, hy, hr, min_circularity=0.55, min_aspec
                 return False
         
         if DEBUG_DETECTIONS:
-            print(f"[Shape Validation] Hole at ({hx:.1f}, {hy:.1f}) PASSED: circularity={circularity:.2f}, aspect_ratio={ratio:.2f}", flush=True)
+            print(f"[Shape Validation] Hole at ({hx:.1f}, {hy:.1f}) PASSED: circularity={circularity:.2f}", flush=True)
         
         return True
     except Exception as e:
@@ -1032,8 +1016,9 @@ def _annotate_and_score(frame, shooting_mode="rifle"):
         if enhanced_shape[0] > original_shape[0]:
             enhancement_scale = float(enhanced_shape[0]) / float(original_shape[0])
 
-    # Keep rifle sensitivity high enough to catch torn holes; edge/boundary guards handle noise.
-    model_conf = 0.08 if mode == "rifle" else 0.08
+    # Use standardized 0.12 confidence threshold identical to scripts_pistol.
+    # Lower thresholds caused massive hallucination of shots.
+    model_conf = 0.12
     res = model(infer_frame, conf=model_conf)[0]
     names = res.names
 
@@ -1070,13 +1055,7 @@ def _annotate_and_score(frame, shooting_mode="rifle"):
                     black_area = area
                     black_box = np.array([x1, y1, x2, y2])  # Use scaled coordinates
             else:
-                # Reject box if it is touching the frame edge (x=0, y=0, w, h)
-                fh, fw = frame_proc.shape[:2]
-                margin = 5  # pixels
-                if x1 <= margin or y1 <= margin or x2 >= fw - margin or y2 >= fh - margin:
-                    if DEBUG_DETECTIONS:
-                        print(f"Hole candidate rejected: at frame boundary x1={x1:.1f}, y1={y1:.1f}, x2={x2:.1f}, y2={y2:.1f}", flush=True)
-                    continue
+
 
                 # Optional class-name filtering. If HOLE_CLASS_TOKENS is None, accept
                 # any non-black class as a hole candidate.
@@ -1207,50 +1186,19 @@ def _annotate_and_score(frame, shooting_mode="rifle"):
 
     # Validate hole shapes (filter out noise/scratches based on circularity)
     validated_holes = []
-    rejected_holes = []
     frame_gray = cv.cvtColor(infer_frame_original, cv.COLOR_BGR2GRAY) if len(infer_frame_original.shape) == 3 else infer_frame_original
     
     for hx, hy, hr in hole_detections:
-        # Quick size check first
-        if hr < min_hole_radius_px or hr < hole_radius_min_px or hr > hole_radius_max_px:
+        # Quick size check first: only use relative HOLE_RADIUS_MIN_FACTOR floor
+        # to avoid incorrect physical-mm cutoffs on small-frame images.
+        if hr < hole_radius_min_px or hr > hole_radius_max_px:
             continue
 
         # Shape validation: circularity + aspect ratio
-        # Rifle tears are often less circular than pistol holes.
-        min_circ = 0.45 if mode == "rifle" else 0.55
-        min_aspect = 0.5 if mode == "rifle" else 0.6
-        if _validate_hole_shape(frame_gray, hx, hy, hr, min_circularity=min_circ, min_aspect_ratio=min_aspect):
+        # Standardized to highly-reliable pistol levels to prevent false positives.
+        if _validate_hole_shape(frame_gray, hx, hy, hr, min_circularity=0.55, min_aspect_ratio=0.6):
             validated_holes.append((hx, hy, hr))
-        else:
-            rejected_holes.append((hx, hy, hr))
 
-    # Rifle fallback (guarded): recover torn/irregular holes that remain inside the
-    # detected black scoring region, even if some other shots already validated.
-    if mode == "rifle" and rejected_holes:
-        black_guard_radius = (R_black_x + R_black_y) / 2.0 if (R_black_x is not None and R_black_y is not None) else (outer_radius_px * RIFLE_BLACK_RATIO)
-        rescue_holes = []
-        for hx, hy, hr in rejected_holes:
-            # Guarded fallback is for torn/irregular holes, so keep lower bound but relax upper size.
-            if hr < min_hole_radius_px:
-                continue
-            dist_to_center = sqrt((hx - center_x) * (hx - center_x) + (hy - center_y) * (hy - center_y))
-            # Keep only holes in/near black area; this blocks frame-edge and logo noise.
-            if dist_to_center <= black_guard_radius * 1.20:
-                rescue_holes.append((hx, hy, hr))
-        if rescue_holes:
-            if DEBUG_DETECTIONS:
-                print(f"[Rifle Fallback] recovered {len(rescue_holes)} hole(s) inside black region", flush=True)
-            validated_holes.extend(rescue_holes)
-
-    # Stability fallback: if validation rejects everything but YOLO did detect holes,
-    # score YOLO detections directly so scoring does not intermittently disappear.
-    if mode != "rifle" and not validated_holes and hole_detections:
-        if DEBUG_DETECTIONS:
-            print(
-                f"[Scoring Fallback] validation rejected all holes; using raw detections count={len(hole_detections)}",
-                flush=True,
-            )
-        validated_holes = list(hole_detections)
 
     # Final de-noise pass: remove near-neighbor duplicate detections (4-5px noise).
     validated_holes = _suppress_neighbor_hole_noise(validated_holes, NEIGHBOR_NOISE_DISTANCE_PX)
@@ -1265,8 +1213,9 @@ def _annotate_and_score(frame, shooting_mode="rifle"):
         effective_hole_radius_px = expected_hole_radius_px
     effective_hole_radius_ratio = effective_hole_radius_px / outer_radius_px
 
-    # Rifle refinement can pull multiple raw detections onto the same physical hole.
-    # Run one more dedupe pass after center refinement so only one score is emitted.
+    # Apply center refinement for rifle shots (no additional dedup — a
+    # simple fixed-distance pass was already done above, and a second pass
+    # with radius-scaled distances here was merging valid second shots).
     if mode == "rifle" and validated_holes:
         refined_validated_holes = []
         for hx, hy, hr in validated_holes:
@@ -1282,12 +1231,7 @@ def _annotate_and_score(frame, shooting_mode="rifle"):
                     black_radius_for_refine,
                 )
             refined_validated_holes.append((hx, hy, hr))
-
-        refined_merge_distance_px = max(
-            float(NEIGHBOR_NOISE_DISTANCE_PX),
-            float(effective_hole_radius_px) * 1.75,
-        )
-        validated_holes = _suppress_neighbor_hole_noise(refined_validated_holes, refined_merge_distance_px)
+        validated_holes = refined_validated_holes
 
     for hx, hy, hr in validated_holes:
         # Store original YOLO position for comparison
