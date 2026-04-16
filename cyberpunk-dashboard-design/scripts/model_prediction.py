@@ -1352,9 +1352,7 @@ def _annotate_and_score(frame, shooting_mode="rifle"):
                     print(f"[Contour 10] Circularity {contour_circularity:.2f} < {CONTOUR_MIN_CIRCULARITY}, using YOLO score", flush=True)
             else:
                 print(f"[Contour 10] contour_result is None, using YOLO score", flush=True)
-
-        # Skip 0.0-scoring detections: a score of 0 means the pellet edge is
-        # entirely outside ring 1, which is a clear false positive on a framed target.
+        # Skip 0.0-scoring detections — pellet edge entirely outside ring 1.
         if score == 0.0:
             if DEBUG_DETECTIONS:
                 print(f"[Score Filter] Shot at ({hx:.1f}, {hy:.1f}) skipped: score=0.0", flush=True)
