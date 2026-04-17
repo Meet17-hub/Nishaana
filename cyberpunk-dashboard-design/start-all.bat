@@ -19,7 +19,7 @@ echo.
 
 REM Start Manager and underlying Flask backend in a new window
 echo Starting Manager + initial Flask Backend on port 5000/5005...
-start "Flask Manager + Backend" cmd /k "python manager.py"
+start "Flask Manager + Backend" cmd /k ".venv\Scripts\activate && python manager.py"
 
 REM Wait a moment for Flask to start
 timeout /t 3 /nobreak

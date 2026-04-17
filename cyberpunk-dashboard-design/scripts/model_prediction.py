@@ -367,18 +367,15 @@ def _rifle_decimal_score_all_rings(
         return 0.0
 
     # Bands are [inner, outer):
-    # For rifle, use the true 10-ring OUTER boundary (5.0mm diameter => 2.5mm radius),
-    # not the ring-9 start ratio that was making 10.x scores too generous.
-    ten_outer = float(RIFLE_RING_10_OUTER_RATIO) if mode == "rifle" else float(ring_ratios[9])
-    # 10: [0, ten_outer), 9: [ten_outer, r8), ..., 2: [r2, r1), 1: [r1, 1.0)
+    # For rifle, ring_ratios[9] = 0.12088 is the outer boundary of ring 10
+    # (and the inner boundary of ring 9). This is what the integer scorer uses too.
+    # Using RIFLE_RING_10_OUTER_RATIO (0.10989) here instead caused ring 9's band
+    # to be 10% wider than every other ring, making decimal sub-scores in ring 9 wrong.
+    ten_outer = float(ring_ratios[9])  # consistent for both rifle and pistol
+    # 10: [0, ten_outer), 9: [r9, r8), 8: [r8, r7), ..., 2: [r2, r1), 1: [r1, 1.0)
     bands = [(10, 0.0, ten_outer)]
-    if mode == "rifle":
-        bands.append((9, ten_outer, float(ring_ratios[8])))
-        for s in range(8, 1, -1):
-            bands.append((s, float(ring_ratios[s]), float(ring_ratios[s - 1])))
-    else:
-        for s in range(9, 1, -1):
-            bands.append((s, float(ring_ratios[s]), float(ring_ratios[s - 1])))
+    for s in range(9, 1, -1):
+        bands.append((s, float(ring_ratios[s]), float(ring_ratios[s - 1])))
     bands.append((1, float(ring_ratios[1]), 1.0))
 
     base_score = 0
@@ -846,7 +843,19 @@ def _black_contour_geometry_px(frame, black_box):
     if area < 50:
         return None
 
-    ellipse = _fit_ellipse_from_contour(largest)
+    # Use the convex hull of the largest dark contour for all geometry computations.
+    # Bullet holes at or near the edge of the black scoring disk create inward
+    # indentations in the detected contour. These dents pull the ellipse-fitted
+    # center toward the opposite side of the disk, mis-scoring EVERY shot on the
+    # frame (one hole scores too high, the other too low). The convex hull removes
+    # the indentations and recovers the true circular boundary of the disk.
+    hull = cv.convexHull(largest)
+    hull_area = float(cv.contourArea(hull))
+    # Fall back to raw contour only if hull is degenerate (shouldn't happen in practice).
+    fit_contour = hull if hull_area >= 50 else largest
+    fit_area = hull_area if hull_area >= 50 else area
+
+    ellipse = _fit_ellipse_from_contour(fit_contour)
     if ellipse is not None:
         ex, ey, ea, eb, ang = ellipse
         ellipse = (ex + ix1, ey + iy1, ea, eb, ang)
@@ -855,14 +864,14 @@ def _black_contour_geometry_px(frame, black_box):
         r_est = float((ea + eb) * 0.5)
         return cx, cy, r_est, ellipse
 
-    m = cv.moments(largest)
+    m = cv.moments(fit_contour)
     if m.get("m00", 0.0) != 0.0:
         cx = float(m["m10"] / m["m00"]) + ix1
         cy = float(m["m01"] / m["m00"]) + iy1
-        r_est = float(np.sqrt(max(area, 1.0) / np.pi))
+        r_est = float(np.sqrt(max(fit_area, 1.0) / np.pi))
         return cx, cy, r_est, None
 
-    (cx0, cy0), r_est0 = cv.minEnclosingCircle(largest)
+    (cx0, cy0), r_est0 = cv.minEnclosingCircle(fit_contour)
     cx = float(cx0) + ix1
     cy = float(cy0) + iy1
     r_est = float(r_est0)
@@ -1247,11 +1256,11 @@ def _annotate_and_score(frame, shooting_mode="rifle"):
     validated_holes = _suppress_neighbor_hole_noise(validated_holes, NEIGHBOR_NOISE_DISTANCE_PX)
 
     if validated_holes:
-        clamped_radii = [
-            _clamp(float(hr), scoring_hole_radius_min_px, scoring_hole_radius_max_px)
-            for _, _, hr in validated_holes
-        ]
-        effective_hole_radius_px = float(np.median(clamped_radii))
+        # Force the scoring pellet gauge to be exactly the nominal physical size.
+        # YOLO bounding boxes often overestimate the radius due to irregular paper
+        # tears. Overestimated radii artifically reduce the edge distance, inflating
+        # the final score (e.g. a 7.9 gets pushed into 8.9).
+        effective_hole_radius_px = expected_hole_radius_px
     else:
         effective_hole_radius_px = expected_hole_radius_px
     effective_hole_radius_ratio = effective_hole_radius_px / outer_radius_px
@@ -1315,7 +1324,7 @@ def _annotate_and_score(frame, shooting_mode="rifle"):
         # ============== CONTOUR-BASED 10-POINT REFINEMENT ==============
         # Run contour detection for shots scoring > 9.9 (inner-10 shots only)
         # Uses discrete band scoring: 10.4, 10.5, 10.6, 10.7, 10.8, 10.9
-        if USE_CONTOUR_10_SCORING and score > CONTOUR_ACTIVATION_MIN_SCORE:
+        if USE_CONTOUR_10_SCORING and score >= CONTOUR_ACTIVATION_MIN_SCORE:
             print(f"[Contour 10] Initial score={score:.1f}, activating contour detection...", flush=True)
             # Search radius based on detected hole size
             search_r = max(hr * 2.0, expected_hole_radius_px * 2.5)
@@ -1349,11 +1358,13 @@ def _annotate_and_score(frame, shooting_mode="rifle"):
                     dy_px = hy - score_center[1]
                     center_distance_px = sqrt(dx_px * dx_px + dy_px * dy_px)
                     
-                    # Calculate ring 10 OUTER boundary radius in pixels
-                    if mode == "rifle":
-                        ring10_outer_ratio = RIFLE_RING_10_OUTER_RATIO
-                    else:
-                        ring10_outer_ratio = PISTOL_RING_RATIOS[9]  # ring 10 outer boundary
+                    # Calculate ring 10 OUTER boundary radius in pixels.
+                    # Use ring_ratios[9] for rifle — same boundary as the decimal band scorer
+                    # (ring_ratios[9] = 0.12088 for rifle, PISTOL_RING_RATIOS[9] for pistol).
+                    ring10_outer_ratio = (
+                        float(RIFLE_RING_RATIOS[9]) if mode == "rifle"
+                        else float(PISTOL_RING_RATIOS[9])
+                    )
                     ring10_radius_px = ring10_outer_ratio * outer_radius_px
                     pellet_radius_px = expected_hole_radius_px
                     
